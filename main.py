@@ -6,7 +6,7 @@ import time
 import hashlib
 import hmac
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from functools import wraps
 
 from google.auth import default
@@ -14,7 +14,6 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.cloud import logging as cloud_logging
 from google.cloud import secretmanager
-from flask import abort
 
 # ----------------------------
 # Configuration & Setup
@@ -50,6 +49,7 @@ MAX_REQUESTS_PER_WINDOW = 100
 
 # Required environment variables
 REQUIRED_ENV_VARS = ['NOTION_DB_ID']
+# Note: NOTION_API_KEY is checked separately via get_secret() which handles both env vars and Secret Manager
 
 # ----------------------------
 # Environment & Secret Management
@@ -89,7 +89,7 @@ def get_secret(secret_id: str, project_id: Optional[str] = None) -> str:
     try:
         client = secretmanager.SecretManagerServiceClient()
         if not project_id:
-            _, project_id = default()
+            credentials, project_id = default()
         
         name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
         response = client.access_secret_version(request={"name": name})
@@ -248,7 +248,7 @@ def rate_limited(func):
         client_id = request.headers.get('X-Forwarded-For', request.remote_addr)
         if not rate_limit(client_id):
             logger.warning(f"Rate limit exceeded for {client_id}")
-            abort(429, description="Rate limit exceeded")
+            return {"error": "Rate limit exceeded"}, 429
         return func(request)
     return wrapper
 
@@ -710,7 +710,7 @@ def sync_tasks(request):
         # Check authentication
         if not verify_cloud_function_auth(request):
             logger.error("Authentication failed")
-            abort(401, description="Unauthorized")
+            return {"error": "Unauthorized"}, 401
         
         # Check for idempotency token
         transaction_id = request.headers.get('X-Transaction-ID')
@@ -789,7 +789,7 @@ def sync_tasks(request):
         
     except EnvironmentError as e:
         logger.error(f"Environment error: {str(e)}")
-        abort(500, description=str(e))
+        return {"error": str(e)}, 500
     except Exception as e:
         logger.error(f"Unexpected error during sync: {str(e)}")
-        abort(500, description="Internal server error")
+        return {"error": "Internal server error"}, 500
