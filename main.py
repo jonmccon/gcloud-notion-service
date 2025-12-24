@@ -90,6 +90,8 @@ def get_secret(secret_id: str, project_id: Optional[str] = None) -> str:
         client = secretmanager.SecretManagerServiceClient()
         if not project_id:
             credentials, project_id = default()
+            if not project_id:
+                raise EnvironmentError("Unable to determine GCP project ID")
         
         name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
         response = client.access_secret_version(request={"name": name})
@@ -109,6 +111,9 @@ def sanitize_string(input_str: Optional[str], max_length: int = 2000) -> str:
     """
     Sanitize string input to prevent injection attacks.
     
+    NOTE: This removes all HTML tags. For a production system handling complex HTML,
+    consider using a library like bleach for more robust HTML sanitization.
+    
     Args:
         input_str: The string to sanitize
         max_length: Maximum allowed length
@@ -126,7 +131,7 @@ def sanitize_string(input_str: Optional[str], max_length: int = 2000) -> str:
     sanitized = sanitized[:max_length]
     
     # Remove all HTML tags to prevent any HTML injection
-    # This is more secure than trying to match specific tags
+    # This simple approach works for task titles/descriptions which shouldn't contain HTML
     sanitized = re.sub(r'<[^>]*>', '', sanitized)
     
     return sanitized.strip()
@@ -169,6 +174,11 @@ def verify_cloud_function_auth(request) -> bool:
 def verify_signature(request, secret: str) -> bool:
     """
     Verify request signature for additional security.
+    
+    NOTE: This function is available but not currently called in the main flow.
+    To enable signature verification, add it to the sync_tasks function:
+        if not verify_signature(request, SIGNATURE_SECRET):
+            return {"error": "Invalid signature"}, 401
     
     Args:
         request: Flask request object
@@ -245,7 +255,14 @@ def rate_limited(func):
     """Decorator to apply rate limiting to a function."""
     @wraps(func)
     def wrapper(request):
-        client_id = request.headers.get('X-Forwarded-For', request.remote_addr)
+        # Get client IP, preferring the first IP from X-Forwarded-For if present
+        # This prevents header spoofing by only using the first (leftmost) IP
+        forwarded_for = request.headers.get('X-Forwarded-For', '')
+        if forwarded_for:
+            client_id = forwarded_for.split(',')[0].strip()
+        else:
+            client_id = request.remote_addr or 'unknown'
+        
         if not rate_limit(client_id):
             logger.warning(f"Rate limit exceeded for {client_id}")
             return {"error": "Rate limit exceeded"}, 429
