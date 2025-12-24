@@ -5,7 +5,7 @@ bash
 
 `gcloud secrets create NOTION_API_KEY`
 
-`gcloud secrets versions add NOTION_API_KEY`
+`gcloud secrets versions add NOTION_API_KEY --data-file=[PATH]`
 
 deploy
 ```
@@ -25,5 +25,5 @@ gcloud scheduler jobs create http tasks-to-notion \
   --schedule="0 6 * * *" \
   --uri=FUNCTION_URL \
   --http-method=GET \
-  --oidc-service-account-email=tasks-notion-sync@PROJECT.iam.gserviceaccount.com
+  --oidc-service-account-email=notion-bot-482105@appspot.gserviceaccount.com
 ```
