@@ -25,10 +25,25 @@ class TestHelperFunctions(unittest.TestCase):
         result = main.sanitize_string("Hello World")
         self.assertEqual(result, "Hello World")
         
-        # Test with script tags
+        # Test with script tags - all HTML tags are removed
         result = main.sanitize_string("<script>alert('xss')</script>Hello")
         self.assertNotIn("<script>", result)
-        self.assertEqual(result, "Hello")
+        self.assertNotIn("<", result)
+        self.assertEqual(result, "alert('xss')Hello")
+        
+        # Test with script tags with spaces (CodeQL security fix)
+        result = main.sanitize_string("<script>alert('xss')</script >Hello")
+        self.assertNotIn("<script>", result)
+        self.assertNotIn("<", result)
+        
+        result = main.sanitize_string("<script>alert('xss')</script\t>Hello")
+        self.assertNotIn("<script>", result)
+        self.assertNotIn("<", result)
+        
+        # Test with any HTML tags
+        result = main.sanitize_string("<div>text</div>")
+        self.assertNotIn("<", result)
+        self.assertEqual(result, "text")
         
         # Test with control characters
         result = main.sanitize_string("Hello\x00World")

@@ -125,8 +125,9 @@ def sanitize_string(input_str: Optional[str], max_length: int = 2000) -> str:
     # Truncate to max length
     sanitized = sanitized[:max_length]
     
-    # Remove any potential script tags or malicious content
-    sanitized = re.sub(r'<script[^>]*>.*?</script>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
+    # Remove all HTML tags to prevent any HTML injection
+    # This is more secure than trying to match specific tags
+    sanitized = re.sub(r'<[^>]*>', '', sanitized)
     
     return sanitized.strip()
 
