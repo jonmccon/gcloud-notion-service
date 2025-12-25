@@ -50,6 +50,10 @@ gcloud secrets add-iam-policy-binding NOTION_API_KEY \
 gcloud secrets add-iam-policy-binding NOTION_DB_ID \
   --member="serviceAccount:PROJECT_ID@appspot.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
+
+gcloud run services add-iam-policy-binding sync_tasks \
+  --member="serviceAccount:SERVICE_ACCOUNT@PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/run.invoker"
 ```
 
 Alternatively, use environment variables (not recommended for production):
@@ -68,9 +72,10 @@ gcloud functions deploy sync_tasks \
   --region us-west1 \
   --entry-point sync_tasks \
   --trigger-http \
-  --allow-unauthenticated=false \
-  --service-account=tasks-notion-sync@PROJECT.iam.gserviceaccount.com
+  --no-allow-unauthenticated \
+  --service-account=notion-bot-482105@notion-bot-482105.iam.gserviceaccount.com
 ```
+
 
 **Note**: Both `NOTION_API_KEY` and `NOTION_DB_ID` are now retrieved from Secret Manager or environment variables automatically.
 
@@ -80,10 +85,11 @@ Create a Cloud Scheduler job for daily syncs:
 
 ```bash
 gcloud scheduler jobs create http tasks-to-notion \
+  --location=us-west1 \
   --schedule="0 6 * * *" \
-  --uri=FUNCTION_URL \
+  --uri=https://us-west1-notion-bot-482105.cloudfunctions.net/sync_tasks \
   --http-method=GET \
-  --oidc-service-account-email=tasks-notion-sync@PROJECT.iam.gserviceaccount.com
+  --oidc-service-account-email=notion-bot-482105@notion-bot-482105.iam.gserviceaccount.com
 ```
 
 For idempotent requests with transaction IDs:
