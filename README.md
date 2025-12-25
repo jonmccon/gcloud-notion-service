@@ -39,8 +39,15 @@ Using Google Secret Manager for production:
 # Create and set the Notion API key
 echo -n "your_notion_api_key" | gcloud secrets create NOTION_API_KEY --data-file=-
 
+# Create and set the Notion database ID
+echo -n "your_notion_database_id" | gcloud secrets create NOTION_DB_ID --data-file=-
+
 # Grant access to the Cloud Function service account
 gcloud secrets add-iam-policy-binding NOTION_API_KEY \
+  --member="serviceAccount:PROJECT_ID@appspot.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+gcloud secrets add-iam-policy-binding NOTION_DB_ID \
   --member="serviceAccount:PROJECT_ID@appspot.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 ```
@@ -62,9 +69,10 @@ gcloud functions deploy sync_tasks \
   --entry-point sync_tasks \
   --trigger-http \
   --allow-unauthenticated=false \
-  --set-env-vars NOTION_DB_ID=your_database_id \
   --service-account=tasks-notion-sync@PROJECT.iam.gserviceaccount.com
 ```
+
+**Note**: Both `NOTION_API_KEY` and `NOTION_DB_ID` are now retrieved from Secret Manager or environment variables automatically.
 
 ### 3. Schedule Automated Syncs
 

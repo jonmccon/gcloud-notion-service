@@ -48,8 +48,8 @@ RATE_LIMIT_WINDOW = 60  # seconds
 MAX_REQUESTS_PER_WINDOW = 100
 
 # Required environment variables
-REQUIRED_ENV_VARS = ['NOTION_DB_ID']
-# Note: NOTION_API_KEY is checked separately via get_secret() which handles both env vars and Secret Manager
+REQUIRED_ENV_VARS = []
+# Note: NOTION_API_KEY and NOTION_DB_ID are retrieved via get_secret() which handles both env vars and Secret Manager
 
 # ----------------------------
 # Environment & Secret Management
@@ -484,8 +484,9 @@ def find_notion_task(google_task_id: str) -> Optional[dict]:
     """
     try:
         def _find():
+            db_id = get_secret('NOTION_DB_ID')
             response = requests.post(
-                f"{NOTION_API_URL}/databases/{os.environ['NOTION_DB_ID']}/query",
+                f"{NOTION_API_URL}/databases/{db_id}/query",
                 headers=notion_headers(),
                 json={
                     "filter": {
@@ -553,11 +554,12 @@ def create_notion_task(task: dict):
         properties = {k: v for k, v in properties.items() if v is not None}
 
         def _create():
+            db_id = get_secret('NOTION_DB_ID')
             response = requests.post(
                 f"{NOTION_API_URL}/pages",
                 headers=notion_headers(),
                 json={
-                    "parent": {"database_id": os.environ["NOTION_DB_ID"]},
+                    "parent": {"database_id": db_id},
                     "properties": properties,
                 },
                 timeout=10,
