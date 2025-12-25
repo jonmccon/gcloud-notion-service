@@ -86,7 +86,7 @@ gcloud scheduler jobs create http tasks-to-notion \
   --uri=FUNCTION_URL \
   --http-method=GET \
   --headers="X-Transaction-ID=scheduled-$(date +%Y%m%d)" \
-  --oidc-service-account-email=tasks-notion-sync@PROJECT.iam.gserviceaccount.com
+  --oidc-service-account-email=notion-bot-482105@appspot.gserviceaccount.com
 ```
 
 ## Development

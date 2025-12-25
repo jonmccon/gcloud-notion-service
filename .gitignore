@@ -48,3 +48,6 @@ htmlcov/
 # Environment variables (keep these secret!)
 .env
 .env.local
+
+# Carry over key files
+key.txt
