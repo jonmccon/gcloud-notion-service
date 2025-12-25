@@ -628,6 +628,18 @@ def sync_tasks(request):
     """
     Main Cloud Function entry point for syncing tasks between Google Tasks and Notion.
     
+    Behavior with zero operations:
+    - Returns status 'ok' with all counters at zero when no tasks are found
+    - This is expected behavior when:
+      * User has no Google Task lists
+      * All task lists are empty
+      * All tasks are marked as deleted
+    - No error occurs in these cases - it's a valid state
+    - Enhanced logging differentiates between:
+      * No tasks found at all
+      * Tasks exist but no changes needed (all up-to-date)
+      * Normal sync with operations performed
+    
     Args:
         request: Flask request object
         
@@ -655,6 +667,10 @@ def sync_tasks(request):
         
         # Get all Google Tasks
         tasks = get_google_tasks()
+        
+        # Log if no tasks were found to provide better visibility
+        if not tasks:
+            logger.info("No tasks found in Google Tasks - sync will complete with zero operations")
         
         created = updated = completed = 0
 
@@ -705,7 +721,14 @@ def sync_tasks(request):
         if transaction_id:
             mark_transaction_processed(transaction_id, result)
         
-        logger.info(f"Sync completed: {result}")
+        # Provide informative logging based on sync results
+        if len(tasks) == 0:
+            logger.info(f"Sync completed with no tasks found: {result}")
+        elif created == 0 and updated == 0 and completed == 0:
+            logger.info(f"Sync completed with no changes needed (all {len(tasks)} tasks up-to-date): {result}")
+        else:
+            logger.info(f"Sync completed: {result}")
+        
         return result
         
     except EnvironmentError as e:

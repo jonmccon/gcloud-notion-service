@@ -259,6 +259,82 @@ class TestGoogleTasksPagination(unittest.TestCase):
         self.assertEqual(mock_tasks_service.list.call_count, 2)
 
 
+class TestSyncTasksScenarios(unittest.TestCase):
+    """Test sync_tasks function with different scenarios"""
+    
+    @patch('main.get_google_tasks')
+    @patch('main.verify_cloud_function_auth')
+    def test_sync_with_zero_tasks(self, mock_auth, mock_get_tasks):
+        """Test sync behavior when no tasks are found"""
+        mock_auth.return_value = True
+        mock_get_tasks.return_value = []
+        
+        request = Mock()
+        request.headers.get = Mock(return_value=None)
+        
+        result = main.sync_tasks(request)
+        
+        # Should return success status with zero operations
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual(result['created'], 0)
+        self.assertEqual(result['updated'], 0)
+        self.assertEqual(result['completed_in_google'], 0)
+        self.assertEqual(result['total_seen'], 0)
+    
+    @patch('main.find_notion_task')
+    @patch('main.get_google_tasks')
+    @patch('main.verify_cloud_function_auth')
+    def test_sync_with_tasks_no_changes_needed(self, mock_auth, mock_get_tasks, mock_find_notion):
+        """Test sync behavior when tasks exist but no changes are needed"""
+        mock_auth.return_value = True
+        
+        # Mock tasks that already exist in Notion and are up-to-date
+        mock_get_tasks.return_value = [
+            {
+                'id': 'task1',
+                'title': 'Test Task 1',
+                'status': 'needsAction',
+                'updated': '2024-01-01T00:00:00Z'
+            },
+            {
+                'id': 'task2',
+                'title': 'Test Task 2',
+                'status': 'needsAction',
+                'updated': '2024-01-01T00:00:00Z',
+                'deleted': True  # This should be skipped
+            }
+        ]
+        
+        # Mock Notion task that is already up-to-date
+        mock_find_notion.return_value = {
+            'id': 'notion-page-1',
+            'properties': {
+                'Updated at': {
+                    'date': {
+                        'start': '2024-01-01T00:00:00Z'
+                    }
+                },
+                'Imported at': {
+                    'date': {
+                        'start': datetime.now(timezone.utc).isoformat()
+                    }
+                }
+            }
+        }
+        
+        request = Mock()
+        request.headers.get = Mock(return_value=None)
+        
+        result = main.sync_tasks(request)
+        
+        # Should return success with tasks seen but no operations
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual(result['created'], 0)
+        self.assertEqual(result['updated'], 0)
+        self.assertEqual(result['completed_in_google'], 0)
+        self.assertEqual(result['total_seen'], 2)
+
+
 class TestNotionIntegration(unittest.TestCase):
     """Test Notion API integration"""
     
