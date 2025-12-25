@@ -617,94 +617,6 @@ def update_notion_task(page_id: str, task: dict):
         raise
 
 
-def get_completed_notion_tasks() -> list[dict]:
-    """
-    Get all completed tasks from Notion that haven't been synced back to Google.
-    
-    Returns:
-        List of Notion page dictionaries
-    """
-    try:
-        def _query():
-            response = requests.post(
-                f"{NOTION_API_URL}/databases/{os.environ['NOTION_DB_ID']}/query",
-                headers=notion_headers(),
-                json={
-                    "filter": {
-                        "and": [
-                            {
-                                "property": "Status",
-                                "status": {"equals": "Completed"}
-                            },
-                            {
-                                "property": "Google Task ID",
-                                "rich_text": {"is_not_empty": True}
-                            }
-                        ]
-                    }
-                },
-                timeout=10,
-            )
-            response.raise_for_status()
-            return response.json().get("results", [])
-        
-        results = retry_with_backoff(_query)
-        logger.info(f"Found {len(results)} completed Notion tasks")
-        return results
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to get completed Notion tasks: {str(e)}")
-        raise
-
-
-def sync_notion_to_google(notion_pages: list[dict], google_tasks_map: dict) -> int:
-    """
-    Sync completed tasks from Notion back to Google Tasks.
-    
-    Args:
-        notion_pages: List of Notion page dictionaries
-        google_tasks_map: Map of Google Task ID to task dictionary
-        
-    Returns:
-        Number of tasks synced
-    """
-    synced = 0
-    
-    for page in notion_pages:
-        try:
-            # Get Google Task ID from Notion page
-            google_task_id_prop = page["properties"].get("Google Task ID", {})
-            google_task_id_texts = google_task_id_prop.get("rich_text", [])
-            
-            if not google_task_id_texts:
-                continue
-                
-            google_task_id = google_task_id_texts[0]["text"]["content"]
-            
-            # Find corresponding Google Task
-            if google_task_id not in google_tasks_map:
-                logger.warning(f"Google task {google_task_id} not found")
-                continue
-            
-            google_task = google_tasks_map[google_task_id]
-            
-            # Check if Google Task is already completed
-            if google_task.get("status") == "completed":
-                continue
-            
-            # Complete the Google Task
-            complete_google_task(google_task)
-            synced += 1
-            logger.info(f"Synced completion from Notion to Google: {google_task_id}")
-            
-        except Exception as e:
-            logger.error(f"Failed to sync Notion page {page['id']}: {str(e)}")
-            # Continue with other tasks
-            continue
-    
-    return synced
-
-
 # ----------------------------
 # Main Sync Logic
 # ----------------------------
@@ -741,9 +653,8 @@ def sync_tasks(request):
         
         # Get all Google Tasks
         tasks = get_google_tasks()
-        google_tasks_map = {task["id"]: task for task in tasks}
         
-        created = updated = completed = notion_synced = 0
+        created = updated = completed = 0
 
         # Sync from Google to Notion
         for task in tasks:
@@ -768,7 +679,7 @@ def sync_tasks(request):
                         update_notion_task(notion_page["id"], task)
                         updated += 1
 
-                # Weekly cleanup
+                # Weekly cleanup: complete Google tasks that have been in Notion for 7+ days
                 imported_at = notion_page["properties"]["Imported at"]["date"]["start"]
                 if now_utc() - parse_rfc3339(imported_at) > timedelta(days=CLEANUP_DAYS):
                     if task.get("status") != "completed":
@@ -779,21 +690,12 @@ def sync_tasks(request):
                 logger.error(f"Failed to process task {task.get('id')}: {str(e)}")
                 # Continue with other tasks
                 continue
-        
-        # Bidirectional sync: Notion -> Google
-        try:
-            completed_notion_tasks = get_completed_notion_tasks()
-            notion_synced = sync_notion_to_google(completed_notion_tasks, google_tasks_map)
-        except Exception as e:
-            logger.error(f"Failed to sync from Notion to Google: {str(e)}")
-            # Don't fail the entire sync if bidirectional sync fails
 
         result = {
             "status": "ok",
             "created": created,
             "updated": updated,
             "completed_in_google": completed,
-            "synced_from_notion": notion_synced,
             "total_seen": len(tasks),
         }
         

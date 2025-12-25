@@ -1,6 +1,6 @@
 # gcloud-notion-service
 
-A secure, production-ready Google Cloud Function that syncs tasks between Google Tasks and Notion with comprehensive security features, error handling, and bidirectional sync capabilities.
+A secure, production-ready Google Cloud Function that syncs tasks from Google Tasks to Notion with comprehensive security features, error handling, and automatic cleanup capabilities.
 
 ## Features
 
@@ -12,7 +12,7 @@ A secure, production-ready Google Cloud Function that syncs tasks between Google
 - **Structured Logging**: Cloud Logging integration for production monitoring
 
 ### Functionality
-- **Bidirectional Sync**: Syncs task status both ways (Google Tasks ↔ Notion)
+- **Unidirectional Sync**: Syncs tasks from Google Tasks to Notion as an input to your Notion-based workflow
 - **Pagination**: Handles large task lists with API pagination
 - **Idempotency**: Transaction IDs prevent duplicate processing
 - **Retry Logic**: Exponential backoff for transient failures
@@ -134,10 +134,8 @@ The codebase includes:
 4. Sync Google Tasks → Notion:
    - Create new tasks in Notion
    - Update modified tasks
-   - Complete old tasks in Google
-5. Sync Notion → Google Tasks:
-   - Mark completed Notion tasks as done in Google
-6. Return detailed statistics
+   - Complete old tasks in Google after 7 days in Notion (automatic cleanup)
+5. Return detailed statistics
 
 ## API Response
 
@@ -147,7 +145,6 @@ The codebase includes:
   "created": 5,
   "updated": 3,
   "completed_in_google": 2,
-  "synced_from_notion": 1,
   "total_seen": 150
 }
 ```
