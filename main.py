@@ -177,6 +177,12 @@ def update_secret(secret_id: str, secret_value: str, project_id: Optional[str] =
         secret_id: The ID of the secret to update
         secret_value: The new secret value
         project_id: Optional GCP project ID. If not provided, uses default credentials
+        
+    Note:
+        This function logs errors but does not raise exceptions. Token refresh has already
+        succeeded when this is called, so storage failure should not prevent the current
+        request from proceeding. The token will be refreshed again on the next request if
+        storage fails.
     """
     try:
         client = secretmanager.SecretManagerServiceClient()
@@ -196,9 +202,15 @@ def update_secret(secret_id: str, secret_value: str, project_id: Optional[str] =
         )
         logger.info(f"Updated secret {secret_id}")
     except Exception as e:
+        # Log error but don't raise - token refresh succeeded, storage failure is not critical
+        # The refreshed token is still valid for the current request
         logger.error(f"Failed to update secret {secret_id}: {str(e)}")
-        # Don't raise exception - token refresh succeeded, storage failure is not critical
-        logger.warning("Token refresh succeeded but storage failed. Next request will refresh again.")
+        logger.warning(
+            f"Token refresh succeeded but Secret Manager update failed for {secret_id}. "
+            "The refreshed token will be used for this request. "
+            "Next request will attempt to refresh and store the token again. "
+            "If this persists, check Secret Manager permissions and quotas."
+        )
 
 
 # ----------------------------
