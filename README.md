@@ -47,24 +47,45 @@ The service uses OAuth 2.0 user credentials to access your personal Google Tasks
 
 ### 2. Run OAuth Setup
 
-Run the setup script to authorize access and store credentials:
+There are two ways to set up OAuth credentials, depending on your environment:
+
+#### Option A: Full Setup with Secret Manager (Recommended for Production)
+
+Run the setup script to authorize access and store credentials in Secret Manager:
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Run OAuth setup (this will open your browser)
+# Run OAuth setup
 python setup_oauth.py \
   --credentials-file client_secrets.json \
   --project-id YOUR_PROJECT_ID
 ```
 
 This script will:
-- Open a browser window for you to authorize access to Google Tasks
+- Display a URL for you to visit in your browser (works in container environments)
+- Prompt you to paste an authorization code after authorizing
 - Store the OAuth tokens in Google Secret Manager as `GOOGLE_OAUTH_TOKEN`
 - Store the client configuration as `GOOGLE_OAUTH_CLIENT_CONFIG`
 
 **Important**: Sign in with the Google account that has the Tasks you want to sync.
+
+#### Option B: Simple Token Generation (For Testing/Development)
+
+If you just need to generate a token file for local testing:
+
+```bash
+# Run the simpler auth flow script
+python auth-flow.py
+```
+
+This will:
+- Display a URL for you to visit in your browser
+- Prompt you to paste an authorization code
+- Save credentials to `token.json` (not to Secret Manager)
+
+**Note**: For production deployments, use Option A to store credentials in Secret Manager.
 
 ### 3. Grant Secret Access to Cloud Function Service Account
 

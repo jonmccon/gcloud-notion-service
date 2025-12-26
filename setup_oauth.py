@@ -6,6 +6,9 @@ This script handles the one-time OAuth 2.0 consent flow to obtain user credentia
 for accessing Google Tasks. The obtained tokens are stored in Google Secret Manager
 for use by the Cloud Function.
 
+This script uses OOB (out-of-band) flow which works well in container environments
+where a browser cannot be automatically opened.
+
 Usage:
     1. Create OAuth 2.0 credentials in Google Cloud Console:
        - Go to APIs & Services > Credentials
@@ -15,11 +18,13 @@ Usage:
     2. Run this script:
        python setup_oauth.py --credentials-file client_secrets.json --project-id YOUR_PROJECT_ID
     
-    3. Follow the browser prompts to authorize access to Google Tasks
+    3. The script will display a URL - visit it in your browser to authorize
     
-    4. The script will store the tokens in Secret Manager as:
-       - GOOGLE_OAUTH_TOKEN (access token)
-       - GOOGLE_OAUTH_REFRESH_TOKEN (refresh token)
+    4. Copy the authorization code from the browser and paste it into the script
+    
+    5. The script will store the tokens in Secret Manager as:
+       - GOOGLE_OAUTH_TOKEN (contains all credential data including refresh token)
+       - GOOGLE_OAUTH_CLIENT_CONFIG (client configuration for reference)
 """
 
 import argparse
@@ -88,6 +93,7 @@ def create_or_update_secret(project_id: str, secret_id: str, secret_value: str) 
 def run_oauth_flow(credentials_file: str) -> Credentials:
     """
     Run the OAuth 2.0 consent flow to obtain user credentials.
+    Uses OOB (out-of-band) flow which is better for container environments.
     
     Args:
         credentials_file: Path to the OAuth client secrets JSON file
@@ -96,23 +102,38 @@ def run_oauth_flow(credentials_file: str) -> Credentials:
         Credentials object with access and refresh tokens
     """
     print("\n" + "="*60)
-    print("Starting OAuth 2.0 Authorization Flow")
+    print("AUTHORIZATION REQUIRED")
     print("="*60)
-    print("\nA browser window will open for you to authorize access.")
-    print("Please sign in with the Google account that has the Tasks you want to sync.")
+    print("\nStarting OAuth 2.0 Authorization Flow (OOB mode)")
+    print("This mode works in container environments where a browser cannot be opened.")
     print()
     
+    # Use OOB (out-of-band) flow - better for containers
     flow = InstalledAppFlow.from_client_secrets_file(
         credentials_file,
-        SCOPES
+        SCOPES,
+        redirect_uri='urn:ietf:wg:oauth:2.0:oob'
     )
     
-    # Run local server flow
-    creds = flow.run_local_server(
-        port=8080,
-        prompt='consent',
-        success_message='Authorization successful! You can close this window.'
+    # Get the authorization URL
+    auth_url, _ = flow.authorization_url(
+        access_type='offline',
+        prompt='consent'
     )
+    
+    print("Please visit this URL to authorize the application:\n")
+    print(auth_url)
+    print("\n" + "="*60)
+    print("\nAfter authorizing, Google will display a code on the page.")
+    print("Copy that code and paste it here.")
+    print("="*60 + "\n")
+    
+    # Get the authorization code from user
+    code = input('Enter the authorization code: ').strip()
+    
+    # Exchange the code for credentials
+    flow.fetch_token(code=code)
+    creds = flow.credentials
     
     print("\n✓ Authorization successful!")
     return creds
