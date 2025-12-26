@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch, MagicMock
 import os
 import time
+import json
 from datetime import datetime, timezone
 
 # Set test environment before importing main
@@ -300,6 +301,108 @@ class TestNotionIntegration(unittest.TestCase):
         
         # Verify request was made
         self.assertTrue(mock_post.called)
+
+
+class TestOAuthAuthentication(unittest.TestCase):
+    """Test OAuth 2.0 authentication functionality"""
+    
+    @patch('main.get_secret')
+    @patch('main.Request')
+    def test_get_oauth_credentials_valid_token(self, mock_request, mock_get_secret):
+        """Test getting valid OAuth credentials"""
+        # Mock credentials data
+        creds_data = {
+            'token': 'valid_access_token',
+            'refresh_token': 'valid_refresh_token',
+            'token_uri': 'https://oauth2.googleapis.com/token',
+            'client_id': 'test_client_id',
+            'client_secret': 'test_client_secret',
+            'scopes': ['https://www.googleapis.com/auth/tasks']
+        }
+        mock_get_secret.return_value = json.dumps(creds_data)
+        
+        # Mock valid credentials (not expired)
+        with patch('main.Credentials') as mock_creds_class:
+            mock_creds = Mock()
+            mock_creds.valid = True
+            mock_creds_class.return_value = mock_creds
+            
+            result = main.get_oauth_credentials()
+            
+            # Verify credentials were created
+            self.assertIsNotNone(result)
+            mock_get_secret.assert_called_once_with('GOOGLE_OAUTH_TOKEN', None)
+    
+    @patch('main.get_secret')
+    @patch('main.update_secret')
+    @patch('main.Request')
+    def test_get_oauth_credentials_refresh_expired(self, mock_request, mock_update_secret, mock_get_secret):
+        """Test refreshing expired OAuth credentials"""
+        import json
+        
+        # Mock credentials data
+        creds_data = {
+            'token': 'expired_access_token',
+            'refresh_token': 'valid_refresh_token',
+            'token_uri': 'https://oauth2.googleapis.com/token',
+            'client_id': 'test_client_id',
+            'client_secret': 'test_client_secret',
+            'scopes': ['https://www.googleapis.com/auth/tasks']
+        }
+        mock_get_secret.return_value = json.dumps(creds_data)
+        
+        # Mock expired credentials that need refresh
+        with patch('main.Credentials') as mock_creds_class:
+            mock_creds = Mock()
+            mock_creds.valid = False
+            mock_creds.expired = True
+            mock_creds.refresh_token = 'valid_refresh_token'
+            mock_creds.token = 'new_access_token'
+            mock_creds.client_id = 'test_client_id'
+            mock_creds.client_secret = 'test_client_secret'
+            mock_creds.token_uri = 'https://oauth2.googleapis.com/token'
+            mock_creds.scopes = ['https://www.googleapis.com/auth/tasks']
+            
+            # Mock refresh to set valid to True
+            def refresh_side_effect(request):
+                mock_creds.valid = True
+            
+            mock_creds.refresh = Mock(side_effect=refresh_side_effect)
+            mock_creds_class.return_value = mock_creds
+            
+            result = main.get_oauth_credentials()
+            
+            # Verify refresh was called
+            mock_creds.refresh.assert_called_once()
+            
+            # Verify updated credentials were stored
+            self.assertTrue(mock_update_secret.called)
+    
+    @patch('main.get_secret')
+    def test_get_oauth_credentials_missing(self, mock_get_secret):
+        """Test handling of missing OAuth credentials"""
+        mock_get_secret.side_effect = EnvironmentError("Secret not found")
+        
+        with self.assertRaises(EnvironmentError) as context:
+            main.get_oauth_credentials()
+        
+        self.assertIn("OAuth credentials not found", str(context.exception))
+    
+    @patch('main.get_oauth_credentials')
+    def test_google_service_with_oauth(self, mock_get_oauth):
+        """Test Google service creation with OAuth credentials"""
+        # Mock OAuth credentials
+        mock_creds = Mock()
+        mock_get_oauth.return_value = mock_creds
+        
+        with patch('main.build') as mock_build:
+            mock_build.return_value = Mock()
+            
+            service = main.google_service()
+            
+            # Verify build was called with OAuth credentials
+            mock_build.assert_called_once_with("tasks", "v1", credentials=mock_creds)
+            mock_get_oauth.assert_called_once()
 
 
 if __name__ == '__main__':

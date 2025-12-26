@@ -2,14 +2,18 @@
 
 A secure, production-ready Google Cloud Function that syncs tasks from Google Tasks to Notion with comprehensive security features, error handling, and automatic cleanup capabilities.
 
+**Authentication**: Uses OAuth 2.0 user credentials to access your personal Google Tasks (not service accounts).
+
 ## Features
 
 ### Security
+- **OAuth 2.0 Authentication**: Secure user credential-based access to Google Tasks
 - **Authentication**: Validates IAM/OIDC tokens for Cloud Function invocations
 - **Rate Limiting**: Prevents abuse with configurable rate limits (100 requests/minute per client)
 - **Input Sanitization**: All external input is sanitized to prevent injection attacks
 - **Secret Management**: Supports Google Secret Manager with environment variable fallback
 - **Structured Logging**: Cloud Logging integration for production monitoring
+- **Automatic Token Refresh**: OAuth tokens are automatically refreshed when expired
 
 ### Functionality
 - **Unidirectional Sync**: Syncs tasks from Google Tasks to Notion as an input to your Notion-based workflow
@@ -31,18 +35,50 @@ A secure, production-ready Google Cloud Function that syncs tasks from Google Ta
   - Google Tasks API enabled
   - Notion integration with API key and database ID
 
-### 1. Create Secrets (Recommended)
+### 1. Create OAuth 2.0 Credentials
 
-Using Google Secret Manager for production:
+The service uses OAuth 2.0 user credentials to access your personal Google Tasks.
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) > APIs & Services > Credentials
+2. Click "Create Credentials" > "OAuth 2.0 Client ID"
+3. Select "Desktop app" as the application type
+4. Give it a name (e.g., "Tasks-Notion Sync")
+5. Download the credentials JSON file (save as `client_secrets.json`)
+
+### 2. Run OAuth Setup
+
+Run the setup script to authorize access and store credentials:
 
 ```bash
-# Create and set the Notion API key
-echo -n "your_notion_api_key" | gcloud secrets create NOTION_API_KEY --data-file=-
+# Install dependencies
+pip install -r requirements.txt
 
-# Create and set the Notion database ID
-echo -n "your_notion_database_id" | gcloud secrets create NOTION_DB_ID --data-file=-
+# Run OAuth setup (this will open your browser)
+python setup_oauth.py \
+  --credentials-file client_secrets.json \
+  --project-id YOUR_PROJECT_ID
+```
 
-# Grant access to the Cloud Function service account
+This script will:
+- Open a browser window for you to authorize access to Google Tasks
+- Store the OAuth tokens in Google Secret Manager as `GOOGLE_OAUTH_TOKEN`
+- Store the client configuration as `GOOGLE_OAUTH_CLIENT_CONFIG`
+
+**Important**: Sign in with the Google account that has the Tasks you want to sync.
+
+### 3. Grant Secret Access to Cloud Function Service Account
+
+```bash
+# Grant access to OAuth tokens
+gcloud secrets add-iam-policy-binding GOOGLE_OAUTH_TOKEN \
+  --member="serviceAccount:PROJECT_ID@appspot.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+gcloud secrets add-iam-policy-binding GOOGLE_OAUTH_CLIENT_CONFIG \
+  --member="serviceAccount:PROJECT_ID@appspot.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+# Grant access to Notion secrets
 gcloud secrets add-iam-policy-binding NOTION_API_KEY \
   --member="serviceAccount:PROJECT_ID@appspot.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
@@ -50,20 +86,27 @@ gcloud secrets add-iam-policy-binding NOTION_API_KEY \
 gcloud secrets add-iam-policy-binding NOTION_DB_ID \
   --member="serviceAccount:PROJECT_ID@appspot.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
-
-gcloud run services add-iam-policy-binding sync_tasks \
-  --member="serviceAccount:SERVICE_ACCOUNT@PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/run.invoker"
 ```
 
-Alternatively, use environment variables (not recommended for production):
+### 4. Create Notion Secrets (if not already created)
+
+```bash
+# Create and set the Notion API key
+echo -n "your_notion_api_key" | gcloud secrets create NOTION_API_KEY --data-file=-
+
+# Create and set the Notion database ID
+echo -n "your_notion_database_id" | gcloud secrets create NOTION_DB_ID --data-file=-
+```
+
+Alternatively, use environment variables for local testing (not recommended for production):
 
 ```bash
 export NOTION_API_KEY="your_notion_api_key"
 export NOTION_DB_ID="your_notion_database_id"
+export GOOGLE_OAUTH_TOKEN='{"token": "...", "refresh_token": "...", ...}'
 ```
 
-### 2. Deploy the Cloud Function
+### 5. Deploy the Cloud Function
 
 ```bash
 gcloud functions deploy sync_tasks \
@@ -187,13 +230,49 @@ gcloud logging read "resource.type=cloud_function AND resource.labels.function_n
   --format json
 ```
 
+## OAuth Credential Maintenance
+
+### Token Refresh
+The Cloud Function automatically refreshes OAuth tokens when they expire. The refresh token is used to obtain new access tokens without requiring user interaction.
+
+### Re-authorization
+If you need to re-authorize (e.g., if you revoke access or switch accounts):
+
+1. Run the setup script again:
+   ```bash
+   python setup_oauth.py \
+     --credentials-file client_secrets.json \
+     --project-id YOUR_PROJECT_ID
+   ```
+
+2. The new tokens will overwrite the old ones in Secret Manager
+
+### Revoking Access
+To revoke access to your Google Tasks:
+
+1. Go to [Google Account Permissions](https://myaccount.google.com/permissions)
+2. Find "Tasks-Notion Sync" (or your OAuth app name)
+3. Click "Remove Access"
+
+Note: After revoking, you'll need to re-run the setup script to restore functionality.
+
+### Monitoring OAuth Issues
+If you see authentication errors in logs:
+- Check that `GOOGLE_OAUTH_TOKEN` secret exists in Secret Manager
+- Verify the Cloud Function service account has `secretmanager.secretAccessor` role
+- Check token expiration and refresh token validity
+- Re-run setup if needed
+
 ## Security Considerations
 
 1. **Never commit secrets** to version control
-2. **Use Secret Manager** in production
+2. **Use Secret Manager** in production for all sensitive data (OAuth tokens, API keys)
 3. **Restrict function access** with IAM policies
 4. **Monitor rate limits** for unusual activity
 5. **Review logs regularly** for security events
+6. **Protect OAuth credentials**: Keep `client_secrets.json` secure and never commit it
+7. **Use OAuth scopes carefully**: Only request necessary permissions (currently only Tasks access)
+8. **Regularly review OAuth permissions** in your Google Account settings
 
 ## Troubleshooting
 
@@ -201,6 +280,11 @@ gcloud logging read "resource.type=cloud_function AND resource.labels.function_n
 - Verify OIDC token is present in request headers
 - Check service account permissions
 - Ensure `--allow-unauthenticated=false` is set
+
+### OAuth Errors
+- If you see "OAuth credentials not found": Run `setup_oauth.py` to configure authentication
+- If tokens are expired and won't refresh: Re-run the setup script to re-authorize
+- Check that service account has access to `GOOGLE_OAUTH_TOKEN` secret
 
 ### Rate Limiting
 - Default: 100 requests per minute per client
