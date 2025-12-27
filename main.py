@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 NOTION_API_URL = "https://api.notion.com/v1"
 # Notion API version as specified in the API documentation
 # See: https://developers.notion.com/reference/versioning
-# This version (2022-06-28) is the latest stable version supporting all features used in this service
+# This version (2022-06-28) is a stable version supporting all features used in this service
 NOTION_VERSION = "2022-06-28"
 
 TASK_TYPE_REGEX = re.compile(r'^([A-Za-z]{3,5})-\s?')

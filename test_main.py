@@ -292,8 +292,11 @@ class TestNotionIntegration(unittest.TestCase):
     @patch('main.notion_headers')
     def test_find_notion_task(self, mock_headers, mock_post):
         """Test finding a Notion task"""
-        mock_headers.return_value = {'Authorization': 'Bearer test', 
-                                     'Notion-Version': '2022-06-28'}
+        mock_headers.return_value = {
+            'Authorization': 'Bearer test',
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+        }
         mock_response = Mock()
         mock_response.json.return_value = {
             'results': [{'id': 'page1', 'properties': {}}]
@@ -383,7 +386,11 @@ class TestNotionIntegration(unittest.TestCase):
     @patch('main.notion_headers')
     def test_create_notion_task(self, mock_headers, mock_post):
         """Test creating a Notion task"""
-        mock_headers.return_value = {'Authorization': 'Bearer test'}
+        mock_headers.return_value = {
+            'Authorization': 'Bearer test',
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+        }
         mock_response = Mock()
         mock_response.raise_for_status = Mock()
         mock_post.return_value = mock_response
