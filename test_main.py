@@ -171,16 +171,14 @@ class TestEnvironmentValidation(unittest.TestCase):
     
     def test_validate_environment_missing_vars(self):
         """Test validation with missing variables"""
-        # Temporarily remove required variable
-        old_value = os.environ.pop('NOTION_DB_ID', None)
-        
+        # Since REQUIRED_ENV_VARS is now empty (secrets are retrieved via get_secret),
+        # this test verifies that validation passes when there are no required env vars
+        # This is the correct behavior as the service now uses Secret Manager
         try:
-            with self.assertRaises(EnvironmentError):
-                main.validate_environment()
-        finally:
-            # Restore variable
-            if old_value:
-                os.environ['NOTION_DB_ID'] = old_value
+            main.validate_environment()
+            # Should succeed since REQUIRED_ENV_VARS is empty
+        except EnvironmentError:
+            self.fail("validate_environment() raised EnvironmentError unexpectedly")
 
 
 class TestRetryLogic(unittest.TestCase):
