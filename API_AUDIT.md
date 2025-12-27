@@ -73,7 +73,7 @@ POST /databases/{database_id}/query
 - Rich text filter with equals: ✅ Supported
 - Property name matching: ✅ Correct
 
-#### 1.3 Page Creation ✅ CORRECT
+#### 1.3 Page Creation ✅ FIXED
 **Location**: `main.py:630-696` (create_notion_task function)
 
 ```python
@@ -98,13 +98,18 @@ POST /pages
 
 **Reference**: https://developers.notion.com/reference/post-page
 
+**Issue Found and Fixed**:
+- **Problem**: The "Link" property was always included in the request, even when `task.get("selfLink")` returned `None`. This created an invalid request `{"url": null}` which violates the Notion API requirement that URL properties must be either a valid URL string or omitted entirely.
+- **Fix**: Made the "Link" property conditional: `"Link": {"url": task.get("selfLink")} if task.get("selfLink") else None`
+- **Line**: `main.py:665`
+
 **Verification**:
 - Parent database_id: ✅ Correct
 - Title property structure: ✅ Correct
 - Status property: ✅ Correct (using status type)
 - Rich text array structure: ✅ Correct
 - Date objects: ✅ Correct
-- URL property: ✅ Correct
+- URL property: ✅ Fixed (now properly conditional)
 - Select property: ✅ Correct
 - Multi-select property: ✅ Correct
 
@@ -471,18 +476,25 @@ logger.warning(f"Rate limit exceeded for client {client_id}")
 
 ## Summary of Findings
 
-### ✅ Compliant (No Changes Required)
-1. **Notion API v1** - All endpoints and data structures match official documentation
+### ✅ Compliant (Fixed)
+1. **Notion API v1** - All endpoints match official documentation (URL property issue fixed)
 2. **Google Tasks API v1** - Correct implementation with proper pagination
 3. **Google Cloud Secret Manager** - Proper secret access and update patterns
 4. **Google Cloud Logging** - Correct integration with Python logging
 5. **OAuth Token Management** - Correct refresh and storage mechanisms
 
-### ⚠️ Deprecation Warning (Update Recommended)
-1. **OAuth OOB Flow** - Deprecated by Google, should migrate to loopback flow
-   - **Impact**: Medium - Still works but will be disabled in future
-   - **Files**: `setup_oauth.py` (line 115), `auth-flow.py` (line 9)
-   - **Action**: Replace `redirect_uri='urn:ietf:wg:oauth:2.0:oob'` with loopback flow
+### 🔧 Issues Found and Fixed
+1. **Notion API - URL Property Validation** - Fixed in this PR
+   - **Issue**: Link property always included even when `selfLink` was `None`, creating invalid `{"url": null}` 
+   - **Impact**: Caused 400 Bad Request errors when creating Notion pages
+   - **Fix**: Made Link property conditional: `"Link": {"url": task.get("selfLink")} if task.get("selfLink") else None`
+   - **Location**: `main.py:665`
+
+### ⚠️ Deprecation Fixed
+1. **OAuth OOB Flow** - Migrated to loopback flow (completed in this PR)
+   - **Status**: ✅ Fixed
+   - **Files Updated**: `setup_oauth.py`, `auth-flow.py`
+   - **Action Taken**: Replaced deprecated `redirect_uri='urn:ietf:wg:oauth:2.0:oob'` with modern loopback flow
 
 ### ✨ Optional Enhancements (No Issues)
 1. Add specific Notion error code handling (400, 401, 404, 429, 500)
@@ -494,14 +506,18 @@ logger.warning(f"Rate limit exceeded for client {client_id}")
 ## Recommended Actions
 
 ### Priority 1: Address Deprecation
-- [ ] Update OAuth flow from OOB to loopback in both scripts
-- [ ] Test OAuth flow after changes
-- [ ] Update documentation to reflect new flow
+- [x] Update OAuth flow from OOB to loopback in both scripts
+- [x] Test OAuth flow after changes
+- [x] Update documentation to reflect new flow
 
-### Priority 2: Documentation Updates
+### Priority 2: Fix API Issues  
+- [x] Fix Notion API URL property validation issue
+- [x] Update audit document with findings
+
+### Priority 3: Documentation Updates
 - [x] Create this comprehensive API audit document
-- [ ] Add API version tracking to README
-- [ ] Document API update procedures
+- [x] Add API version tracking to README
+- [x] Document API update procedures
 
 ### Priority 3: Future Enhancements
 - [ ] Add Notion API rate limit handling (429 errors)

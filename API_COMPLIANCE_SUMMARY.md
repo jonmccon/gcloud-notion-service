@@ -15,7 +15,7 @@ A comprehensive audit was conducted on all external API integrations in the gclo
 ## APIs Audited
 
 ### 1. ✅ Notion API v1 (2022-06-28)
-**Status**: Fully Compliant  
+**Status**: Fixed - URL Property Issue Resolved  
 **Documentation**: https://developers.notion.com/reference/intro
 
 **Verified Endpoints**:
@@ -23,10 +23,16 @@ A comprehensive audit was conducted on all external API integrations in the gclo
 - POST `/v1/pages` - Page creation
 - PATCH `/v1/pages/{page_id}` - Page updates
 
-**Findings**: All implementations match official specifications exactly. Proper use of:
-- Required headers (Authorization, Notion-Version, Content-Type)
-- Property structures (title, status, rich_text, date, url, select, multi_select)
-- Filter and pagination patterns
+**Issue Found and Fixed**:
+- **Problem**: The "Link" URL property was always included in page creation requests, even when the value was `None`. This created invalid requests with `{"url": null}`, causing 400 Bad Request errors.
+- **Fix**: Made the Link property conditional to only include it when a valid URL exists: `"Link": {"url": task.get("selfLink")} if task.get("selfLink") else None`
+- **Location**: `main.py:665`
+
+**Verification**: All implementations now match official specifications:
+- Required headers (Authorization, Notion-Version, Content-Type) ✅
+- Property structures (title, status, rich_text, date, url, select, multi_select) ✅
+- URL property validation (omit if None) ✅ Fixed
+- Filter and pagination patterns ✅
 
 ---
 
@@ -97,12 +103,17 @@ A comprehensive audit was conducted on all external API integrations in the gclo
 ## Changes Made
 
 ### Code Changes
-1. **OAuth Flow Migration** (`setup_oauth.py`, `auth-flow.py`)
+1. **Notion API URL Property Fix** (`main.py:665`)
+   - Fixed invalid `{"url": null}` being sent in page creation requests
+   - Made Link property conditional to match Notion API requirements
+   - Prevents 400 Bad Request errors when Google Tasks lack selfLink
+
+2. **OAuth Flow Migration** (`setup_oauth.py`, `auth-flow.py`)
    - Replaced deprecated OOB flow with loopback flow
    - Added better error messages and user guidance
    - Maintained backward compatibility with fallback mechanism
 
-2. **Test Updates** (`test_main.py`)
+3. **Test Updates** (`test_main.py`)
    - Updated environment validation test to reflect current design
    - Improved test documentation
    - All 24 tests passing
@@ -138,9 +149,10 @@ A comprehensive audit was conducted on all external API integrations in the gclo
 
 ## Recommendations Implemented
 
-1. ✅ **Updated OAuth Flow** - Migrated from deprecated OOB to loopback
-2. ✅ **Documented API Versions** - Added to README and audit report
-3. ✅ **Added Official Doc Links** - Provided in README and audit
+1. ✅ **Fixed Notion API URL Property** - Resolved invalid null URL issue causing 400 errors
+2. ✅ **Updated OAuth Flow** - Migrated from deprecated OOB to loopback
+3. ✅ **Documented API Versions** - Added to README and audit report
+4. ✅ **Added Official Doc Links** - Provided in README and audit
 
 ## Future Recommendations
 
