@@ -262,11 +262,38 @@ class TestGoogleTasksPagination(unittest.TestCase):
 class TestNotionIntegration(unittest.TestCase):
     """Test Notion API integration"""
     
+    def test_notion_headers_include_version(self):
+        """Test that Notion-Version header is included in all requests"""
+        with patch('main.get_secret') as mock_get_secret:
+            mock_get_secret.return_value = 'test-api-key'
+            
+            headers = main.notion_headers()
+            
+            # Verify all required headers are present
+            self.assertIn('Authorization', headers)
+            self.assertIn('Notion-Version', headers)
+            self.assertIn('Content-Type', headers)
+            
+            # Verify Notion-Version header value
+            self.assertEqual(headers['Notion-Version'], '2022-06-28')
+            
+            # Verify header format
+            self.assertTrue(headers['Authorization'].startswith('Bearer '))
+            self.assertEqual(headers['Content-Type'], 'application/json')
+    
+    def test_notion_version_format(self):
+        """Test that Notion-Version follows YYYY-MM-DD format"""
+        import re
+        version_pattern = r'^\d{4}-\d{2}-\d{2}$'
+        self.assertRegex(main.NOTION_VERSION, version_pattern,
+                        "Notion-Version must be in YYYY-MM-DD format")
+    
     @patch('main.requests.post')
     @patch('main.notion_headers')
     def test_find_notion_task(self, mock_headers, mock_post):
         """Test finding a Notion task"""
-        mock_headers.return_value = {'Authorization': 'Bearer test'}
+        mock_headers.return_value = {'Authorization': 'Bearer test', 
+                                     'Notion-Version': '2022-06-28'}
         mock_response = Mock()
         mock_response.json.return_value = {
             'results': [{'id': 'page1', 'properties': {}}]
@@ -278,6 +305,79 @@ class TestNotionIntegration(unittest.TestCase):
         
         self.assertIsNotNone(result)
         self.assertEqual(result['id'], 'page1')
+    
+    @patch('main.requests.post')
+    @patch('main.notion_headers')
+    @patch('main.get_secret')
+    def test_create_notion_task_payload_structure(self, mock_get_secret, mock_headers, mock_post):
+        """Test that create_notion_task sends properly structured payload"""
+        mock_get_secret.return_value = 'test-db-id'
+        mock_headers.return_value = {
+            'Authorization': 'Bearer test',
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+        }
+        mock_response = Mock()
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+        
+        task = {
+            'id': 'task123',
+            'title': 'CODE- Test Task',
+            'status': 'needsAction',
+            'updated': '2024-01-01T00:00:00Z',
+            'due': '2024-01-10T00:00:00Z',
+            'notes': 'Task description',
+            'selfLink': 'https://tasks.google.com/task123'
+        }
+        
+        main.create_notion_task(task)
+        
+        # Verify POST was called
+        self.assertTrue(mock_post.called)
+        
+        # Get the call arguments
+        call_args = mock_post.call_args
+        
+        # Verify URL
+        self.assertEqual(call_args[0][0], 'https://api.notion.com/v1/pages')
+        
+        # Verify payload structure
+        payload = call_args[1]['json']
+        self.assertIn('parent', payload)
+        self.assertIn('properties', payload)
+        
+        # Verify parent structure
+        self.assertIn('database_id', payload['parent'])
+        
+        # Verify required properties are present
+        properties = payload['properties']
+        self.assertIn('Task name', properties)
+        self.assertIn('Status', properties)
+        self.assertIn('Google Task ID', properties)
+        self.assertIn('Imported at', properties)
+        
+        # Verify property types match Notion API schema
+        # Title property
+        self.assertIn('title', properties['Task name'])
+        self.assertIsInstance(properties['Task name']['title'], list)
+        self.assertIn('text', properties['Task name']['title'][0])
+        
+        # Status property
+        self.assertIn('status', properties['Status'])
+        self.assertIn('name', properties['Status']['status'])
+        
+        # Rich text property
+        self.assertIn('rich_text', properties['Google Task ID'])
+        self.assertIsInstance(properties['Google Task ID']['rich_text'], list)
+        
+        # Date property
+        self.assertIn('date', properties['Imported at'])
+        self.assertIn('start', properties['Imported at']['date'])
+        
+        # Verify task type was extracted
+        self.assertIn('Task type', properties)
+        self.assertIn('multi_select', properties['Task type'])
     
     @patch('main.requests.post')
     @patch('main.notion_headers')
@@ -300,6 +400,89 @@ class TestNotionIntegration(unittest.TestCase):
         
         # Verify request was made
         self.assertTrue(mock_post.called)
+    
+    @patch('main.requests.patch')
+    @patch('main.notion_headers')
+    def test_update_notion_task_payload_structure(self, mock_headers, mock_patch):
+        """Test that update_notion_task sends properly structured payload"""
+        mock_headers.return_value = {
+            'Authorization': 'Bearer test',
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+        }
+        mock_response = Mock()
+        mock_response.raise_for_status = Mock()
+        mock_patch.return_value = mock_response
+        
+        task = {
+            'id': 'task123',
+            'title': 'Updated Task',
+            'updated': '2024-01-02T00:00:00Z',
+            'due': '2024-01-15T00:00:00Z',
+            'notes': 'Updated description'
+        }
+        
+        main.update_notion_task('page123', task)
+        
+        # Verify PATCH was called
+        self.assertTrue(mock_patch.called)
+        
+        # Get the call arguments
+        call_args = mock_patch.call_args
+        
+        # Verify URL format
+        self.assertEqual(call_args[0][0], 'https://api.notion.com/v1/pages/page123')
+        
+        # Verify payload structure
+        payload = call_args[1]['json']
+        self.assertIn('properties', payload)
+        
+        properties = payload['properties']
+        
+        # Verify properties that should be updated
+        self.assertIn('Task name', properties)
+        self.assertIn('Updated at', properties)
+        self.assertIn('Due date', properties)
+        self.assertIn('Description', properties)
+        
+        # Verify property structure matches Notion API schema
+        self.assertIn('title', properties['Task name'])
+        self.assertIn('date', properties['Updated at'])
+        self.assertIn('date', properties['Due date'])
+        self.assertIn('rich_text', properties['Description'])
+    
+    @patch('main.requests.post')
+    @patch('main.notion_headers')
+    def test_database_query_payload_structure(self, mock_headers, mock_post):
+        """Test database query uses proper filter structure"""
+        mock_headers.return_value = {
+            'Authorization': 'Bearer test',
+            'Notion-Version': '2022-06-28'
+        }
+        mock_response = Mock()
+        mock_response.json.return_value = {'results': []}
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+        
+        main.find_notion_task('google-task-456')
+        
+        # Verify POST was called
+        self.assertTrue(mock_post.called)
+        
+        # Get call arguments
+        call_args = mock_post.call_args
+        
+        # Verify payload structure for database query
+        payload = call_args[1]['json']
+        self.assertIn('filter', payload)
+        
+        # Verify filter structure matches Notion API schema
+        filter_obj = payload['filter']
+        self.assertIn('property', filter_obj)
+        self.assertIn('rich_text', filter_obj)
+        self.assertEqual(filter_obj['property'], 'Google Task ID')
+        self.assertIn('equals', filter_obj['rich_text'])
+        self.assertEqual(filter_obj['rich_text']['equals'], 'google-task-456')
 
 
 class TestOAuthAuthentication(unittest.TestCase):

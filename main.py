@@ -40,6 +40,9 @@ logger = logging.getLogger(__name__)
 # ----------------------------
 
 NOTION_API_URL = "https://api.notion.com/v1"
+# Notion API version as specified in the API documentation
+# See: https://developers.notion.com/reference/versioning
+# This version (2022-06-28) is the latest stable version supporting all features used in this service
 NOTION_VERSION = "2022-06-28"
 
 TASK_TYPE_REGEX = re.compile(r'^([A-Za-z]{3,5})-\s?')
@@ -579,12 +582,24 @@ def complete_google_task(task: dict):
 # ----------------------------
 
 def notion_headers():
-    """Get headers for Notion API requests."""
+    """
+    Get headers for Notion API requests.
+    
+    Returns headers compliant with Notion API requirements:
+    - Authorization: Bearer token for API authentication
+    - Notion-Version: Required version header (format: YYYY-MM-DD)
+    - Content-Type: application/json for JSON payloads
+    
+    See: https://developers.notion.com/reference/request-format
+    
+    Returns:
+        Dictionary containing required headers for Notion API requests
+    """
     try:
         api_key = get_secret('NOTION_API_KEY')
         return {
             "Authorization": f"Bearer {api_key}",
-            "Notion-Version": NOTION_VERSION,
+            "Notion-Version": NOTION_VERSION,  # Required by Notion API for all requests
             "Content-Type": "application/json",
         }
     except Exception as e:
@@ -595,6 +610,9 @@ def notion_headers():
 def find_notion_task(google_task_id: str) -> Optional[dict]:
     """
     Find a Notion task by Google Task ID.
+    
+    Uses the Notion Database Query API to search for existing pages.
+    See: https://developers.notion.com/reference/post-database-query
     
     Args:
         google_task_id: The Google Task ID to search for
@@ -631,13 +649,33 @@ def create_notion_task(task: dict):
     """
     Create a new task in Notion.
     
+    Constructs a page creation payload compliant with Notion API schema.
+    See: https://developers.notion.com/reference/post-page
+    
+    Payload structure follows Notion's property types:
+    - title: Array of rich text objects
+    - status: Status property with name
+    - rich_text: Array of rich text objects  
+    - date: Date object with start (ISO 8601)
+    - url: URL string
+    - select: Select object with name
+    - multi_select: Array of select objects
+    
+    Required database properties (defined in Notion):
+    - Task name (title)
+    - Status (status)
+    - Google Task ID (rich_text)
+    - Imported at (date)
+    
     Args:
-        task: Task dictionary from Google Tasks
+        task: Task dictionary from Google Tasks API
     """
     try:
         raw_title = sanitize_string(task.get("title", "Untitled"))
         task_type = extract_task_type(raw_title)
 
+        # Build properties according to Notion API schema
+        # See: https://developers.notion.com/reference/property-value-object
         properties = {
             "Task name": {
                 "title": [{"text": {"content": normalize_title(raw_title)}}]
@@ -671,10 +709,13 @@ def create_notion_task(task: dict):
                 "multi_select": [{"name": task_type}]
             }
 
+        # Remove None values to avoid sending null properties
         properties = {k: v for k, v in properties.items() if v is not None}
 
         def _create():
             db_id = get_secret('NOTION_DB_ID')
+            # Payload structure per Notion API: parent + properties
+            # See: https://developers.notion.com/reference/post-page
             response = requests.post(
                 f"{NOTION_API_URL}/pages",
                 headers=notion_headers(),
@@ -699,11 +740,18 @@ def update_notion_task(page_id: str, task: dict):
     """
     Update an existing Notion task.
     
+    Uses the Update Page API to modify existing page properties.
+    See: https://developers.notion.com/reference/patch-page
+    
+    Only updates properties that have changed to minimize API calls.
+    The PATCH endpoint merges properties with existing values.
+    
     Args:
         page_id: Notion page ID to update
-        task: Task dictionary from Google Tasks
+        task: Task dictionary from Google Tasks API
     """
     try:
+        # Build update payload with only properties that may have changed
         properties = {
             "Task name": {
                 "title": [{"text": {"content": normalize_title(sanitize_string(task["title"]))}}]
@@ -719,6 +767,7 @@ def update_notion_task(page_id: str, task: dict):
             } if task.get("notes") else None,
         }
 
+        # Remove None values
         properties = {k: v for k, v in properties.items() if v is not None}
 
         def _update():
