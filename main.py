@@ -662,7 +662,7 @@ def create_notion_task(task: dict):
             "Description": {
                 "rich_text": [{"text": {"content": sanitize_string(task.get("notes", ""))}}]
             } if task.get("notes") else None,
-            "Link": {"url": task.get("selfLink")},
+            "Link": {"url": task.get("selfLink")} if task.get("selfLink") else None,
             "Effort level": {"select": {"name": "Medium"}},
         }
 

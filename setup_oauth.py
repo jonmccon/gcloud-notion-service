@@ -93,7 +93,12 @@ def create_or_update_secret(project_id: str, secret_id: str, secret_value: str) 
 def run_oauth_flow(credentials_file: str) -> Credentials:
     """
     Run the OAuth 2.0 consent flow to obtain user credentials.
-    Uses OOB (out-of-band) flow which is better for container environments.
+    Uses loopback flow which works in most environments including containers.
+    
+    Note: The OOB (out-of-band) flow has been deprecated by Google. This implementation
+    uses the recommended loopback flow. If you're in a completely headless environment,
+    you may need to copy the URL and open it in a browser on another machine, then
+    copy the resulting URL from the browser back to this prompt.
     
     Args:
         credentials_file: Path to the OAuth client secrets JSON file
@@ -104,36 +109,52 @@ def run_oauth_flow(credentials_file: str) -> Credentials:
     print("\n" + "="*60)
     print("AUTHORIZATION REQUIRED")
     print("="*60)
-    print("\nStarting OAuth 2.0 Authorization Flow (OOB mode)")
-    print("This mode works in container environments where a browser cannot be opened.")
+    print("\nStarting OAuth 2.0 Authorization Flow (Loopback mode)")
+    print("A browser window will open for authorization.")
+    print("If you're in a container/headless environment:")
+    print("  1. Copy the URL that will be displayed")
+    print("  2. Open it in a browser on another machine")
+    print("  3. After authorizing, copy the full redirect URL from the browser")
+    print("  4. Paste it back here when prompted")
     print()
     
-    # Use OOB (out-of-band) flow - better for containers
+    # Use loopback flow (recommended by Google, replaces deprecated OOB flow)
+    # The library will automatically start a local server on localhost
     flow = InstalledAppFlow.from_client_secrets_file(
         credentials_file,
-        SCOPES,
-        redirect_uri='urn:ietf:wg:oauth:2.0:oob'
+        SCOPES
     )
     
-    # Get the authorization URL
-    auth_url, _ = flow.authorization_url(
-        access_type='offline',
-        prompt='consent'
-    )
-    
-    print("Please visit this URL to authorize the application:\n")
-    print(auth_url)
-    print("\n" + "="*60)
-    print("\nAfter authorizing, Google will display a code on the page.")
-    print("Copy that code and paste it here.")
-    print("="*60 + "\n")
-    
-    # Get the authorization code from user
-    code = input('Enter the authorization code: ').strip()
-    
-    # Exchange the code for credentials
-    flow.fetch_token(code=code)
-    creds = flow.credentials
+    # Run the flow - this will attempt to open a browser
+    # For container environments, it will fall back to displaying the URL
+    try:
+        creds = flow.run_local_server(
+            host='localhost',
+            port=8080,
+            authorization_prompt_message='Please visit this URL to authorize: {url}',
+            success_message='Authorization successful! You may close this window.',
+            open_browser=False  # Don't auto-open browser (better for containers)
+        )
+    except Exception as e:
+        # Fallback for environments where local server cannot be started
+        print(f"\nCould not start local server: {e}")
+        print("\nFalling back to manual authorization...")
+        
+        auth_url, _ = flow.authorization_url(
+            access_type='offline',
+            prompt='consent'
+        )
+        
+        print("\nPlease visit this URL to authorize the application:\n")
+        print(auth_url)
+        print("\n" + "="*60)
+        print("\nAfter authorizing, copy the FULL URL from your browser's address bar")
+        print("(it will start with http://localhost:8080/)")
+        print("="*60 + "\n")
+        
+        redirect_response = input('Paste the full redirect URL here: ').strip()
+        flow.fetch_token(authorization_response=redirect_response)
+        creds = flow.credentials
     
     print("\n✓ Authorization successful!")
     return creds

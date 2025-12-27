@@ -4,6 +4,17 @@ A secure, production-ready Google Cloud Function that syncs tasks from Google Ta
 
 **Authentication**: Uses OAuth 2.0 user credentials to access your personal Google Tasks (not service accounts).
 
+## API Integrations
+
+This service uses the following APIs, all verified against official documentation:
+
+- **Notion API**: v1 (Version: 2022-06-28) - [Documentation](https://developers.notion.com/reference/intro)
+- **Google Tasks API**: v1 - [Documentation](https://developers.google.com/tasks/reference/rest)
+- **Google Cloud Secret Manager** - [Documentation](https://cloud.google.com/secret-manager/docs)
+- **Google Cloud Logging** - [Documentation](https://cloud.google.com/logging/docs)
+
+See [API_AUDIT.md](API_AUDIT.md) for a comprehensive audit of all API integrations and compliance status.
+
 ## Features
 
 ### Security
@@ -64,10 +75,13 @@ python setup_oauth.py \
 ```
 
 This script will:
-- Display a URL for you to visit in your browser (works in container environments)
-- Prompt you to paste an authorization code after authorizing
+- Start a local server to receive the OAuth callback (modern loopback flow)
+- Display a URL for you to visit in your browser
+- Automatically complete authorization when you approve access
 - Store the OAuth tokens in Google Secret Manager as `GOOGLE_OAUTH_TOKEN`
 - Store the client configuration as `GOOGLE_OAUTH_CLIENT_CONFIG`
+
+**Note**: If you're in a headless/container environment, copy the URL and open it on another machine, then copy the redirect URL back to the prompt.
 
 **Important**: Sign in with the Google account that has the Tasks you want to sync.
 
@@ -81,8 +95,9 @@ python auth-flow.py
 ```
 
 This will:
+- Start a local server to receive the OAuth callback
 - Display a URL for you to visit in your browser
-- Prompt you to paste an authorization code
+- Automatically complete authorization when you approve access
 - Save credentials to `token.json` (not to Secret Manager)
 
 **Note**: For production deployments, use Option A to store credentials in Secret Manager.
