@@ -53,3 +53,4 @@ htmlcov/
 key.txt
 token.json
 client_secret.json
+client_secrets.json

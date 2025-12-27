@@ -10,10 +10,13 @@ from typing import Optional, Dict, Any, Tuple
 from functools import wraps
 
 from google.auth import default
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.cloud import logging as cloud_logging
 from google.cloud import secretmanager
+import json
 
 # ----------------------------
 # Configuration & Setup
@@ -101,6 +104,113 @@ def get_secret(secret_id: str, project_id: Optional[str] = None) -> str:
     except Exception as e:
         logger.error(f"Failed to retrieve secret {secret_id}: {str(e)}")
         raise EnvironmentError(f"Secret {secret_id} not found in environment or Secret Manager")
+
+
+def get_oauth_credentials(project_id: Optional[str] = None) -> Credentials:
+    """
+    Retrieve and refresh OAuth 2.0 credentials for Google Tasks API.
+    
+    This function:
+    1. Retrieves the stored OAuth credentials from Secret Manager
+    2. Checks if the token is expired
+    3. Refreshes the token if needed
+    4. Updates Secret Manager with the new token
+    
+    Args:
+        project_id: Optional GCP project ID. If not provided, uses default credentials
+        
+    Returns:
+        Valid Credentials object for Google Tasks API
+    """
+    try:
+        # Get credentials from Secret Manager
+        creds_json = get_secret('GOOGLE_OAUTH_TOKEN', project_id)
+        creds_data = json.loads(creds_json)
+        
+        # Create credentials object
+        creds = Credentials(
+            token=creds_data.get('token'),
+            refresh_token=creds_data.get('refresh_token'),
+            token_uri=creds_data.get('token_uri'),
+            client_id=creds_data.get('client_id'),
+            client_secret=creds_data.get('client_secret'),
+            scopes=creds_data.get('scopes')
+        )
+        
+        # Refresh if expired
+        if not creds.valid:
+            if creds.expired and creds.refresh_token:
+                logger.info("OAuth token expired, refreshing...")
+                creds.refresh(Request())
+                
+                # Update stored credentials with new token
+                updated_creds_data = {
+                    'token': creds.token,
+                    'refresh_token': creds.refresh_token,
+                    'token_uri': creds.token_uri,
+                    'client_id': creds.client_id,
+                    'client_secret': creds.client_secret,
+                    'scopes': creds.scopes
+                }
+                
+                # Store updated token
+                update_secret('GOOGLE_OAUTH_TOKEN', json.dumps(updated_creds_data), project_id)
+                logger.info("OAuth token refreshed and stored successfully")
+            else:
+                raise EnvironmentError("OAuth credentials are invalid and cannot be refreshed")
+        
+        return creds
+        
+    except Exception as e:
+        logger.error(f"Failed to get OAuth credentials: {str(e)}")
+        raise EnvironmentError(
+            "OAuth credentials not found or invalid. "
+            "Please run setup_oauth.py to configure OAuth authentication."
+        )
+
+
+def update_secret(secret_id: str, secret_value: str, project_id: Optional[str] = None) -> None:
+    """
+    Update a secret in Google Secret Manager by adding a new version.
+    
+    Args:
+        secret_id: The ID of the secret to update
+        secret_value: The new secret value
+        project_id: Optional GCP project ID. If not provided, uses default credentials
+        
+    Note:
+        This function logs errors but does not raise exceptions. Token refresh has already
+        succeeded when this is called, so storage failure should not prevent the current
+        request from proceeding. The token will be refreshed again on the next request if
+        storage fails.
+    """
+    try:
+        client = secretmanager.SecretManagerServiceClient()
+        if not project_id:
+            credentials, project_id = default()
+            if not project_id:
+                raise EnvironmentError("Unable to determine GCP project ID")
+        
+        parent = f"projects/{project_id}/secrets/{secret_id}"
+        
+        # Add new version
+        client.add_secret_version(
+            request={
+                "parent": parent,
+                "payload": {"data": secret_value.encode("UTF-8")},
+            }
+        )
+        logger.info(f"Updated secret {secret_id}")
+    except Exception as e:
+        # Log error but don't raise - token refresh succeeded, storage failure is not critical
+        # The refreshed token is still valid for the current request
+        logger.error(f"Failed to update secret {secret_id}: {str(e)}")
+        logger.warning(
+            f"Token refresh succeeded but Secret Manager update failed for {secret_id}. "
+            "The refreshed token will be used for this request. "
+            "Next request will attempt to refresh and store the token again. "
+            "If this persists, check Secret Manager permissions and quotas."
+        )
 
 
 # ----------------------------
@@ -378,8 +488,18 @@ def retry_with_backoff(func, max_retries: int = 3, initial_delay: float = 1.0):
 # ----------------------------
 
 def google_service():
-    creds, _ = default()
-    return build("tasks", "v1", credentials=creds)
+    """
+    Create and return a Google Tasks API service using OAuth 2.0 user credentials.
+    
+    Returns:
+        Google Tasks API service object
+    """
+    try:
+        creds = get_oauth_credentials()
+        return build("tasks", "v1", credentials=creds)
+    except Exception as e:
+        logger.error(f"Failed to create Google Tasks service: {str(e)}")
+        raise
 
 
 def get_google_tasks() -> list[dict]:
