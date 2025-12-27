@@ -93,7 +93,7 @@ def create_or_update_secret(project_id: str, secret_id: str, secret_value: str) 
 def run_oauth_flow(credentials_file: str) -> Credentials:
     """
     Run the OAuth 2.0 consent flow to obtain user credentials.
-    Uses loopback IP flow which works in most environments including containers.
+    Uses loopback flow which works in most environments including containers.
     
     Note: The OOB (out-of-band) flow has been deprecated by Google. This implementation
     uses the recommended loopback flow. If you're in a completely headless environment,

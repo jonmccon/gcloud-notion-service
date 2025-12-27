@@ -170,10 +170,11 @@ class TestEnvironmentValidation(unittest.TestCase):
         main.validate_environment()
     
     def test_validate_environment_missing_vars(self):
-        """Test validation with missing variables"""
-        # Since REQUIRED_ENV_VARS is now empty (secrets are retrieved via get_secret),
-        # this test verifies that validation passes when there are no required env vars
-        # This is the correct behavior as the service now uses Secret Manager
+        """Test validation with empty REQUIRED_ENV_VARS list"""
+        # Note: REQUIRED_ENV_VARS is intentionally empty in the current implementation
+        # because secrets (NOTION_API_KEY, NOTION_DB_ID, GOOGLE_OAUTH_TOKEN) are
+        # retrieved via get_secret() which handles both Secret Manager and env vars.
+        # This test verifies that validation passes when there are no required env vars.
         try:
             main.validate_environment()
             # Should succeed since REQUIRED_ENV_VARS is empty
